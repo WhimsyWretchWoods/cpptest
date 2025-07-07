@@ -196,5 +196,5 @@ private suspend fun loadImages(context: Context): List<Uri>? = withContext(Dispa
             imageUris.add(contentUri)
         }
     }
-    imageUis
+    imageUris
 }
