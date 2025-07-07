@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
 import androidx.activity.ComponentActivity
@@ -12,7 +14,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -22,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -40,8 +45,8 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun GalleryScreen() {
-    PermissionHandler {
-        if (it) {
+    PermissionHandler { hasPermission ->
+        if (hasPermission) {
             ImageGrid()
         } else {
             PermissionDeniedScreen()
@@ -55,7 +60,10 @@ fun PermissionDeniedScreen() {
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        Text("Permission denied. Can't show images.")
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Permission denied.")
+            Text("Cannot display images without permission.", modifier = Modifier.padding(top = 8.dp))
+        }
     }
 }
 
@@ -63,22 +71,31 @@ fun PermissionDeniedScreen() {
 fun PermissionHandler(content: @Composable (Boolean) -> Unit) {
     val context = LocalContext.current
     var hasPermission by remember { mutableStateOf(false) }
-    val permissionLauncher = remember {
-        androidx.activity.compose.rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { isGranted ->
+
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { isGranted ->
             hasPermission = isGranted
         }
-    }
+    )
 
     LaunchedEffect(Unit) {
         hasPermission = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.READ_MEDIA_IMAGES
+        ) == PackageManager.PERMISSION_GRANTED ||
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_EXTERNAL_STORAGE
         ) == PackageManager.PERMISSION_GRANTED
 
         if (!hasPermission) {
-            permissionLauncher.launch(Manifest.permission.READ_MEDIA_IMAGES)
+            val permissionToRequest = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                Manifest.permission.READ_MEDIA_IMAGES
+            } else {
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            }
+            permissionLauncher.launch(permissionToRequest)
         }
     }
 
@@ -88,7 +105,7 @@ fun PermissionHandler(content: @Composable (Boolean) -> Unit) {
 @Composable
 fun ImageGrid() {
     val context = LocalContext.current
-    var imageUris by remember { mutableStateOf<List<String>>(emptyList()) }
+    var imageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
     LaunchedEffect(Unit) {
         val result = withContext(Dispatchers.IO) {
@@ -110,13 +127,29 @@ fun ImageGrid() {
 }
 
 @Composable
-fun ImageItem(uri: String) {
+fun ImageItem(uri: Uri) {
     var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    val context = LocalContext.current
 
-    DisposableEffect(uri) {
-        // TODO: Add your image loading from URI here
+    LaunchedEffect(uri) {
+        if (uri != null) {
+            bitmap = withContext(Dispatchers.IO) {
+                try {
+                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                        BitmapFactory.decodeStream(inputStream)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    null
+                }
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
         onDispose {
             bitmap?.recycle()
+            bitmap = null
         }
     }
 
@@ -126,30 +159,42 @@ fun ImageItem(uri: String) {
             contentDescription = null,
             modifier = Modifier.fillMaxSize()
         )
+    } ?: run {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Loading...")
+        }
     }
 }
 
-private suspend fun loadImages(context: Context): List<String>? = withContext(Dispatchers.IO) {
+private suspend fun loadImages(context: Context): List<Uri>? = withContext(Dispatchers.IO) {
+    val imageUris = mutableListOf<Uri>()
     val projection = arrayOf(MediaStore.Images.Media._ID)
-    val cursor = context.contentResolver.query(
-        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+    val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
+
+    val collection = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        MediaStore.Images.Media.getContentUri(
+            MediaStore.VOLUME_EXTERNAL
+        )
+    } else {
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+    }
+
+    context.contentResolver.query(
+        collection,
         projection,
         null,
         null,
-        "${MediaStore.Images.Media.DATE_ADDED} DESC"
-    )
-
-    return@withContext cursor?.use {
-        val idIndex = it.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-        val uris = mutableListOf<String>()
-        while (it.moveToNext()) {
-            val id = it.getLong(idIndex)
-            val uri = ContentUris.withAppendedId(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+        sortOrder
+    )?.use { cursor ->
+        val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+        while (cursor.moveToNext()) {
+            val id = cursor.getLong(idColumn)
+            val contentUri: Uri = ContentUris.withAppendedId(
+                collection,
                 id
-            ).toString()
-            uris.add(uri)
+            )
+            imageUris.add(contentUri)
         }
-        uris
     }
+    imageUis
 }
