@@ -48,16 +48,6 @@ jobs:
       - name: Create empty proguard-rules.pro
         run: touch app/proguard-rules.pro
         
-      - name: Cache Android SDK
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.ANDROID_HOME }}
-          key: Linux-***-sdk-3446ff4d37c9458eaddde351de2a2f2703e8fcb061f714cc080cea1dbf8c4e37
-          restore-keys: Linux-***-sdk-
-          enableCrossOsArchive: false
-          fail-on-cache-miss: false
-          lookup-only: false
-        
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
