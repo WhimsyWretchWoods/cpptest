@@ -5,10 +5,10 @@ project(imageloader)
 add_library(
     imageloader
     SHARED
-    src/main/cpp/imageloader.cpp
+    imageloader.cpp
 )
 
-include_directories(src/main/cpp/include)
+include_directories(include)
 
 find_library(
     log-lib
