@@ -12,11 +12,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -25,11 +23,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.activity.compose.rememberLauncherForActivityResult
+import android.graphics.Bitmap.Config // Import for Bitmap.Config
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -147,11 +145,11 @@ fun LoadImage(uri: String) {
                             .order(java.nio.ByteOrder.LITTLE_ENDIAN).int
                         val pixels = buffer.copyOfRange(8, buffer.size)
 
-                        if (width > 0 && height > 0 && pixels.size == width * height * 4) {
+                        if (width > 0 && height > 0 && pixels.size >= width * height * 4) { // Use >= for safety
                             bitmap = android.graphics.Bitmap.createBitmap(
                                 width,
                                 height,
-                                android.graphics.Bitmap.Config.ARGB_8888
+                                Config.ARGB_8888 // Reverted to ARGB_8888 as it's standard
                             ).apply {
                                 copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(pixels))
                             }
