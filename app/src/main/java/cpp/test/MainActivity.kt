@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
 import androidx.activity.ComponentActivity
@@ -18,21 +17,13 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
@@ -98,13 +89,13 @@ fun PermissionHandler(content: @Composable (Boolean) -> Unit) {
 fun ImageGrid() {
     val context = LocalContext.current
     var imageUris by remember { mutableStateOf<List<String>>(emptyList()) }
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            loadImages(context)?.let {
-                imageUris = it
-            }
+        val result = withContext(Dispatchers.IO) {
+            loadImages(context)
+        }
+        result?.let {
+            imageUris = it
         }
     }
 
@@ -121,10 +112,12 @@ fun ImageGrid() {
 @Composable
 fun ImageItem(uri: String) {
     var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-    
+
     DisposableEffect(uri) {
-        // Load image logic here
-        onDispose { bitmap?.recycle() }
+        // TODO: Add your image loading from URI here
+        onDispose {
+            bitmap?.recycle()
+        }
     }
 
     bitmap?.let {
@@ -145,7 +138,7 @@ private suspend fun loadImages(context: Context): List<String>? = withContext(Di
         null,
         "${MediaStore.Images.Media.DATE_ADDED} DESC"
     )
-    
+
     return@withContext cursor?.use {
         val idIndex = it.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
         val uris = mutableListOf<String>()
