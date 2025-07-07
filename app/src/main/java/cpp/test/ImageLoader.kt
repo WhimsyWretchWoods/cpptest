@@ -9,5 +9,5 @@ object ImageLoader {
     external fun nativeInit()
 
     @JvmStatic
-    external fun nativeDecodeImageFromBytes(data: ByteArray): ByteArray?
+    external fun nativeDecodeImageFromBytes(data: ByteArray, sampleSize: Int): ByteArray?
 }
