@@ -28,12 +28,12 @@ android {
         ndk {
             abiFilters("armeabi-v7a", "arm64-v8a") 
         }
+
+        resources {
+            localeFilters.add("en") 
+        }
     }
     
-    resources {
-        localeFilters.add("en") 
-    }
-
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
