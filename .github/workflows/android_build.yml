@@ -52,9 +52,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.ANDROID_HOME }}
-          key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/*.gradle*') }}
-          restore-keys: |
-            ${{ runner.os }}-android-sdk-
+          key: Linux-***-sdk-3446ff4d37c9458eaddde351de2a2f2703e8fcb061f714cc080cea1dbf8c4e37
+          restore-keys: Linux-***-sdk-
+          enableCrossOsArchive: false
+          fail-on-cache-miss: false
+          lookup-only: false
+          save-always: false
+
 
         
       - name: Set up Android SDK
