@@ -37,6 +37,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.activity.compose.rememberLauncherForActivityResult
+import kotlinx.coroutines.asCoroutineDispatcher
+import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
 
@@ -59,6 +61,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        ImageDecodingDispatcher.close() // Shut down the custom dispatcher
     }
 }
 
@@ -132,63 +139,78 @@ fun ImageGrid() {
     }
 }
 
+// Custom dispatcher for image decoding to limit concurrency
+private val ImageDecodingDispatcher = Executors.newFixedThreadPool(4).asCoroutineDispatcher()
+
 @Composable
 fun LoadImage(uri: String) {
     var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    val cachedBitmap = remember(uri) { BitmapCache.get(uri) }
+    if (cachedBitmap != null) {
+        bitmap = cachedBitmap
+        Log.d("LoadImage", "Cache hit for URI: $uri")
+    }
+
     DisposableEffect(uri) {
         var currentBitmap: android.graphics.Bitmap? = null
 
-        coroutineScope.launch(Dispatchers.IO) {
-            val parsedUri = Uri.parse(uri)
-            var stream: java.io.InputStream? = null
-            try {
-                stream = context.contentResolver.openInputStream(parsedUri)
-                val bytes = stream?.readBytes()
+        if (cachedBitmap == null) {
+            coroutineScope.launch(ImageDecodingDispatcher) { // Use custom dispatcher
+                val parsedUri = Uri.parse(uri)
+                var stream: java.io.InputStream? = null
+                try {
+                    stream = context.contentResolver.openInputStream(parsedUri)
+                    val bytes = stream?.readBytes()
 
-                if (bytes != null && bytes.isNotEmpty()) {
-                    val sampleSize = 2
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        val sampleSize = 2
 
-                    val buffer = ImageLoader.nativeDecodeImageFromBytes(bytes, sampleSize)
-                    if (buffer != null && buffer.size > 8) {
-                        val width = java.nio.ByteBuffer.wrap(buffer, 0, 4)
-                            .order(java.nio.ByteOrder.LITTLE_ENDIAN).int
-                        val height = java.nio.ByteBuffer.wrap(buffer, 4, 4)
-                            .order(java.nio.ByteOrder.LITTLE_ENDIAN).int
-                        val pixels = buffer.copyOfRange(8, buffer.size)
+                        val buffer = ImageLoader.nativeDecodeImageFromBytes(bytes, sampleSize)
+                        if (buffer != null && buffer.size > 8) {
+                            val width = java.nio.ByteBuffer.wrap(buffer, 0, 4)
+                                .order(java.nio.ByteOrder.LITTLE_ENDIAN).int
+                            val height = java.nio.ByteBuffer.wrap(buffer, 4, 4)
+                                .order(java.nio.ByteOrder.LITTLE_ENDIAN).int
+                            val pixels = buffer.copyOfRange(8, buffer.size)
 
-                        if (width > 0 && height > 0 && pixels.size >= width * height * 4) {
-                            val newBitmap = android.graphics.Bitmap.createBitmap(
-                                width,
-                                height,
-                                Config.ARGB_8888
-                            ).apply {
-                                copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(pixels))
+                            if (width > 0 && height > 0 && pixels.size >= width * height * 4) {
+                                val newBitmap = android.graphics.Bitmap.createBitmap(
+                                    width,
+                                    height,
+                                    Config.ARGB_8888
+                                ).apply {
+                                    copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(pixels))
+                                }
+                                BitmapCache.put(uri, newBitmap) // Add to cache
+                                currentBitmap = newBitmap // Track for potential immediate use
+                                withContext(Dispatchers.Main) {
+                                    bitmap = newBitmap
+                                }
+                            } else {
+                                Log.e("LoadImage", "Invalid image data from native decoder for URI: $uri")
                             }
-                            currentBitmap?.recycle()
-                            currentBitmap = newBitmap
-                            bitmap = newBitmap
                         } else {
-                            Log.e("LoadImage", "Invalid image data from native decoder for URI: $uri")
+                            Log.e("LoadImage", "Native decode returned null or too small buffer for URI: $uri")
                         }
                     } else {
-                        Log.e("LoadImage", "Native decode returned null or too small buffer for URI: $uri")
+                        Log.e("LoadImage", "Failed to read bytes or bytes were empty for URI: $uri")
                     }
-                } else {
-                    Log.e("LoadImage", "Failed to read bytes or bytes were empty for URI: $uri")
+                } catch (e: Exception) {
+                    Log.e("LoadImage", "Error loading image for URI: $uri", e)
+                } finally {
+                    stream?.close()
                 }
-            } catch (e: Exception) {
-                Log.e("LoadImage", "Error loading image for URI: $uri", e)
-            } finally {
-                stream?.close()
             }
         }
 
         onDispose {
-            currentBitmap?.recycle()
-            currentBitmap = null
+            // No explicit recycle here. Bitmaps are managed by BitmapCache.
+            // The cache's LRU policy will handle eviction and recycling when needed.
+            // If you explicitly recycle here, you'll break cache hits.
+            currentBitmap = null // Clear reference to avoid accidental use
         }
     }
 
