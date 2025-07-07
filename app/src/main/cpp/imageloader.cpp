@@ -22,12 +22,14 @@ Java_cpp_test_ImageLoader_nativeDecodeImageFromBytes(
     jint reqHeight
 ) {
     if (dataArray == nullptr) {
+        __android_log_print(ANDROID_LOG_ERROR, "ImageLoader", "Input dataArray is null");
         return nullptr;
     }
 
     jsize len = env->GetArrayLength(dataArray);
     jbyte* dataPtr = env->GetByteArrayElements(dataArray, nullptr);
     if (dataPtr == nullptr) {
+        __android_log_print(ANDROID_LOG_ERROR, "ImageLoader", "Failed to get ByteArrayElements");
         return nullptr;
     }
 
@@ -41,12 +43,13 @@ Java_cpp_test_ImageLoader_nativeDecodeImageFromBytes(
     env->ReleaseByteArrayElements(dataArray, dataPtr, JNI_ABORT);
 
     if (!img_raw) {
+        __android_log_print(ANDROID_LOG_ERROR, "ImageLoader", "STB failed: %s", stbi_failure_reason());
         return nullptr;
     }
 
     // Calculate target dimensions maintaining aspect ratio
-    float aspectRatio = static_cast<float>(width) / height;
-    int targetWidth, targetHeight;
+    int targetWidth = width;
+    int targetHeight = height;
     
     if (reqWidth > 0 && reqHeight > 0) {
         targetWidth = reqWidth;
@@ -54,9 +57,6 @@ Java_cpp_test_ImageLoader_nativeDecodeImageFromBytes(
     } else if (sampleSize > 1) {
         targetWidth = width / sampleSize;
         targetHeight = height / sampleSize;
-    } else {
-        targetWidth = width;
-        targetHeight = height;
     }
 
     // Ensure minimum size of 1
@@ -68,19 +68,20 @@ Java_cpp_test_ImageLoader_nativeDecodeImageFromBytes(
     if (targetWidth != width || targetHeight != height) {
         resized_img = static_cast<unsigned char*>(malloc(targetWidth * targetHeight * 4));
         if (resized_img) {
-            stbir_resize_uint8(
+            stbir_resize_uint8_srgb(
                 img_raw, width, height, 0,
                 resized_img, targetWidth, targetHeight, 0,
-                4
+                STBIR_RGBA
             );
-        }
-        stbi_image_free(img_raw);
-        img_raw = resized_img;
-        if (!img_raw) {
+            stbi_image_free(img_raw);
+            img_raw = resized_img;
+            width = targetWidth;
+            height = targetHeight;
+        } else {
+            stbi_image_free(img_raw);
+            __android_log_print(ANDROID_LOG_ERROR, "ImageLoader", "Failed to allocate memory for resized image");
             return nullptr;
         }
-        width = targetWidth;
-        height = targetHeight;
     }
 
     // Prepare result buffer (width + height + pixels)
@@ -89,6 +90,7 @@ Java_cpp_test_ImageLoader_nativeDecodeImageFromBytes(
     jbyteArray result = env->NewByteArray(totalSize);
     if (!result) {
         stbi_image_free(img_raw);
+        __android_log_print(ANDROID_LOG_ERROR, "ImageLoader", "Failed to allocate result byte array");
         return nullptr;
     }
 
