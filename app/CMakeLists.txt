@@ -8,6 +8,8 @@ add_library(
     src/main/cpp/imageloader.cpp
 )
 
+include_directories(src/main/cpp/include)
+
 find_library(
     log-lib
     log
