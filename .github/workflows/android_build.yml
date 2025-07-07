@@ -57,9 +57,6 @@ jobs:
           enableCrossOsArchive: false
           fail-on-cache-miss: false
           lookup-only: false
-          save-always: false
-
-
         
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
