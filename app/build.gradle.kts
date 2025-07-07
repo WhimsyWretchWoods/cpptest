@@ -24,14 +24,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
-        
-        ndk {
-            abiFilters("armeabi-v7a", "arm64-v8a") 
-        }
-
-        resources {
-            localeFilters.add("en") 
-        }
+        resConfigs("en")
     }
     
     externalNativeBuild {
