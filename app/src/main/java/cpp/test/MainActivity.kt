@@ -1,16 +1,25 @@
 package cpp.test
 
+import android.Manifest
+import android.content.ContentUris
+import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.provider.MediaStore
+import android.util.Log
 import android.graphics.Bitmap.Config
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -19,44 +28,106 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
-import cpp.test.ui.theme.CpptestTheme
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-// Removed android.util.Log import
+import androidx.activity.compose.rememberLauncherForActivityResult
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         ImageLoader.nativeInit()
+
         setContent {
-            CpptestTheme {
-                val images = remember { mutableStateOf<List<Uri>>(emptyList()) }
-                val context = LocalContext.current
-
-                LaunchedEffect(Unit) {
-                    val uriList = getGalleryImageUris(context)
-                    images.value = uriList
+            PermissionRequester(Manifest.permission.READ_MEDIA_IMAGES) { isGranted ->
+                if (isGranted) {
+                    ImageGrid()
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Permission denied. Can't show images, obviously.")
+                    }
                 }
-
-                GalleryGrid(imageUris = images.value)
             }
         }
     }
 }
 
 @Composable
-fun GalleryGrid(imageUris: List<Uri>) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
-        modifier = Modifier.fillMaxSize()
-    ) {
-        items(imageUris) { uri ->
-            LoadImage(uri = uri.toString())
+fun PermissionRequester(
+    permission: String,
+    content: @Composable (Boolean) -> Unit
+) {
+    val context = LocalContext.current
+    var permissionGranted by remember { mutableStateOf(false) }
+
+    val requestPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        permissionGranted = isGranted
+        Log.d("PermissionRequester", "Permission '$permission' granted: $isGranted")
+    }
+
+    LaunchedEffect(Unit) {
+        permissionGranted = ContextCompat.checkSelfPermission(
+            context,
+            permission
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!permissionGranted) {
+            Log.d("PermissionRequester", "Requesting permission: $permission")
+            requestPermissionLauncher.launch(permission)
+        }
+    }
+
+    content(permissionGranted)
+}
+
+@Composable
+fun ImageGrid() {
+    val context = LocalContext.current
+    var images by remember { mutableStateOf(listOf<String>()) }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            val projection = arrayOf(MediaStore.Images.Media._ID)
+            val cursor = context.contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                null,
+                null,
+                "${MediaStore.Images.Media.DATE_ADDED} DESC"
+            )
+            cursor?.use {
+                val idIndex = it.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                val uris = mutableListOf<String>()
+                while (it.moveToNext()) {
+                    val id = it.getLong(idIndex)
+                    val uri = ContentUris.withAppendedId(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        id
+                    )
+                    uris.add(uri.toString())
+                }
+                images = uris
+            } ?: run {
+                Log.e("ImageGrid", "Failed to query MediaStore, cursor was null.")
+            }
+        }
+    }
+
+    LazyVerticalGrid(columns = GridCells.Fixed(4), modifier = Modifier.fillMaxSize()) {
+        items(images) { uri ->
+            LoadImage(uri)
         }
     }
 }
@@ -99,11 +170,17 @@ fun LoadImage(uri: String) {
                             currentBitmap?.recycle()
                             currentBitmap = newBitmap
                             bitmap = newBitmap
+                        } else {
+                            Log.e("LoadImage", "Invalid image data from native decoder for URI: $uri")
                         }
+                    } else {
+                        Log.e("LoadImage", "Native decode returned null or too small buffer for URI: $uri")
                     }
+                } else {
+                    Log.e("LoadImage", "Failed to read bytes or bytes were empty for URI: $uri")
                 }
             } catch (e: Exception) {
-                // No log here, because you're too good for debugging.
+                Log.e("LoadImage", "Error loading image for URI: $uri", e)
             } finally {
                 stream?.close()
             }
