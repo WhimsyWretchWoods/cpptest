@@ -5,27 +5,35 @@
 
 extern "C"
 JNIEXPORT jbyteArray JNICALL
-Java_cpp_test_ImageLoader_nativeDecodeImage(JNIEnv *env, jobject, jstring pathJ) {
-    const char *path = env->GetStringUTFChars(pathJ, nullptr);
+Java_cpp_test_ImageLoader_nativeDecodeImageFromBytes(
+        JNIEnv *env, jobject,
+        jbyteArray dataArray
+) {
+    jsize len = env->GetArrayLength(dataArray);
+    jbyte* dataPtr = env->GetByteArrayElements(dataArray, nullptr);
+
     int width, height, channels;
-    unsigned char *data = stbi_load(path, &width, &height, &channels, 4); // force RGBA
-    if (!data) {
-        __android_log_print(ANDROID_LOG_ERROR, "ImageLoader", "Failed to decode %s", path);
-        env->ReleaseStringUTFChars(pathJ, path);
+    unsigned char* img = stbi_load_from_memory(
+        reinterpret_cast<unsigned char*>(dataPtr),
+        len,
+        &width, &height, &channels, 4
+    );
+    env->ReleaseByteArrayElements(dataArray, dataPtr, 0);
+
+    if (!img) {
+        __android_log_print(ANDROID_LOG_ERROR, "ImageLoader", "failed to decode image from memory");
         return nullptr;
     }
+
     size_t bufferSize = width * height * 4;
     jbyteArray result = env->NewByteArray(bufferSize + 8);
     if (!result) {
-        stbi_image_free(data);
-        env->ReleaseStringUTFChars(pathJ, path);
+        stbi_image_free(img);
         return nullptr;
     }
-    // store width/height as first 8 bytes (int32 each)
     env->SetByteArrayRegion(result, 0, 4, reinterpret_cast<jbyte*>(&width));
     env->SetByteArrayRegion(result, 4, 4, reinterpret_cast<jbyte*>(&height));
-    env->SetByteArrayRegion(result, 8, bufferSize, reinterpret_cast<jbyte*>(data));
-    stbi_image_free(data);
-    env->ReleaseStringUTFChars(pathJ, path);
+    env->SetByteArrayRegion(result, 8, bufferSize, reinterpret_cast<jbyte*>(img));
+    stbi_image_free(img);
     return result;
 }
