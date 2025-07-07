@@ -42,106 +42,121 @@ class MainActivity : ComponentActivity() {
         ImageLoader.nativeInit()
 
         setContent {
-            GalleryApp()
+            GalleryScreen()
         }
     }
 }
 
 @Composable
-fun GalleryApp() {
-    PermissionRequester(Manifest.permission.READ_MEDIA_IMAGES) { isGranted ->
-        if (isGranted) {
+fun GalleryScreen() {
+    PermissionHandler {
+        if (it) {
             ImageGrid()
         } else {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Permission denied. Can't show images.")
-            }
+            PermissionDeniedScreen()
         }
     }
 }
 
 @Composable
-fun PermissionRequester(
-    permission: String,
-    content: @Composable (Boolean) -> Unit
-) {
+fun PermissionDeniedScreen() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Text("Permission denied. Can't show images.")
+    }
+}
+
+@Composable
+fun PermissionHandler(content: @Composable (Boolean) -> Unit) {
     val context = LocalContext.current
-    var permissionGranted by remember { mutableStateOf(false) }
-    val requestPermissionLauncher = remember {
+    var hasPermission by remember { mutableStateOf(false) }
+    val permissionLauncher = remember {
         androidx.activity.compose.rememberLauncherForActivityResult(
             ActivityResultContracts.RequestPermission()
         ) { isGranted ->
-            permissionGranted = isGranted
+            hasPermission = isGranted
         }
     }
 
     LaunchedEffect(Unit) {
-        permissionGranted = ContextCompat.checkSelfPermission(
+        hasPermission = ContextCompat.checkSelfPermission(
             context,
-            permission
+            Manifest.permission.READ_MEDIA_IMAGES
         ) == PackageManager.PERMISSION_GRANTED
 
-        if (!permissionGranted) {
-            requestPermissionLauncher.launch(permission)
+        if (!hasPermission) {
+            permissionLauncher.launch(Manifest.permission.READ_MEDIA_IMAGES)
         }
     }
 
-    content(permissionGranted)
+    content(hasPermission)
 }
 
 @Composable
 fun ImageGrid() {
     val context = LocalContext.current
-    var images by remember { mutableStateOf(listOf<String>()) }
+    var imageUris by remember { mutableStateOf<List<String>>(emptyList()) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            val projection = arrayOf(MediaStore.Images.Media._ID)
-            val cursor = context.contentResolver.query(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                projection,
-                null,
-                null,
-                "${MediaStore.Images.Media.DATE_ADDED} DESC"
-            )
-            cursor?.use {
-                val idIndex = it.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-                val uris = mutableListOf<String>()
-                while (it.moveToNext()) {
-                    val id = it.getLong(idIndex)
-                    val uri = ContentUris.withAppendedId(
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                        id
-                    )
-                    uris.add(uri.toString())
-                }
-                images = uris
+            loadImages(context)?.let {
+                imageUris = it
             }
         }
     }
 
-    LazyVerticalGrid(columns = GridCells.Fixed(4), modifier = Modifier.fillMaxSize()) {
-        items(images) { uri ->
-            LoadImage(uri)
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(4),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        items(imageUris) { uri ->
+            ImageItem(uri)
         }
     }
 }
 
 @Composable
-fun LoadImage(uri: String) {
+fun ImageItem(uri: String) {
     var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
+    
     DisposableEffect(uri) {
-        onDispose { }
+        // Load image logic here
+        onDispose { bitmap?.recycle() }
     }
 
     bitmap?.let {
-        Image(bitmap = it.asImageBitmap(), contentDescription = null)
+        Image(
+            bitmap = it.asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+private suspend fun loadImages(context: Context): List<String>? = withContext(Dispatchers.IO) {
+    val projection = arrayOf(MediaStore.Images.Media._ID)
+    val cursor = context.contentResolver.query(
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+        projection,
+        null,
+        null,
+        "${MediaStore.Images.Media.DATE_ADDED} DESC"
+    )
+    
+    return@withContext cursor?.use {
+        val idIndex = it.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+        val uris = mutableListOf<String>()
+        while (it.moveToNext()) {
+            val id = it.getLong(idIndex)
+            val uri = ContentUris.withAppendedId(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                id
+            ).toString()
+            uris.add(uri)
+        }
+        uris
     }
 }
