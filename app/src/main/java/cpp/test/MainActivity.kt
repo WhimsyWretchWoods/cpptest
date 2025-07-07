@@ -65,7 +65,6 @@ fun ImageGrid() {
             while (it.moveToNext()) {
                 val path = it.getString(pathIndex)
                 paths.add(path)
-                ImageLoader.nativeLoadImage(path) // hook to C++
             }
             images = paths
         }
