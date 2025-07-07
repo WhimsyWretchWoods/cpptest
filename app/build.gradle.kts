@@ -25,11 +25,14 @@ android {
         versionCode = 1
         versionName = "1.0"
         resConfigs("en")
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
+        }
     }
     
     externalNativeBuild {
         cmake {
-            path = file("CMakeLists.txt")
+            path = file("src/main/cpp/CMakeLists.txt")
         }
     }
 
