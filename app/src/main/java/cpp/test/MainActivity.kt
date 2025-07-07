@@ -1,4 +1,4 @@
-package cpp.test 
+package cpp.test
 
 import android.Manifest
 import android.content.ContentUris
@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -43,17 +42,22 @@ class MainActivity : ComponentActivity() {
         ImageLoader.nativeInit()
 
         setContent {
-            PermissionRequester(Manifest.permission.READ_MEDIA_IMAGES) { isGranted ->
-                if (isGranted) {
-                    ImageGrid()
-                } else {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("Permission denied. Can't show images.")
-                    }
-                }
+            GalleryApp()
+        }
+    }
+}
+
+@Composable
+fun GalleryApp() {
+    PermissionRequester(Manifest.permission.READ_MEDIA_IMAGES) { isGranted ->
+        if (isGranted) {
+            ImageGrid()
+        } else {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Permission denied. Can't show images.")
             }
         }
     }
